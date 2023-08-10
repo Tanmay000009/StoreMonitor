@@ -12,7 +12,7 @@ class StoreTimezone(Base):
     __tablename__ = "store_timezone"
 
     store_id = Column(String, primary_key=True, index=True)
-    timezone = Column(String, index=True, default="America/Chicago")
+    timezone_str = Column(String, index=True, default="America/Chicago")
 
 
 class BusinessHours(Base):
