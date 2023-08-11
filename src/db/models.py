@@ -35,8 +35,9 @@ class StoreLogs(Base):
 
     __tablename__ = "store_logs"
 
-    store_id = Column(String, primary_key=True, index=True)
-    timestamp = Column(DateTime(timezone=True), primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(String, index=True)
+    timestamp = Column(DateTime(timezone=True), index=True)
     status = Column(
         SQLEnum(StoreStatus),
         index=True,
