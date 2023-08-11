@@ -2,7 +2,7 @@
 
 from enum import Enum
 from sqlalchemy import Column, Integer, String, Enum as SQLEnum, \
-    DateTime
+    DateTime, Time
 from .database import Base
 from pydantic import BaseModel
 
@@ -19,10 +19,11 @@ class BusinessHours(Base):
 
     __tablename__ = "business_hours"
 
-    store_id = Column(String, primary_key=True, index=True)
-    day_of_week = Column(Integer, primary_key=True, index=True)
-    open_time = Column(DateTime, default="00:00:00")
-    close_time = Column(DateTime, default="23:59:59")
+    id = Column(Integer, primary_key=True, index=True)
+    store_id = Column(String, index=True)
+    day_of_week = Column(Integer, index=True)
+    open_time = Column(Time, default="00:00:00")
+    close_time = Column(Time, default="23:59:59")
 
 
 class StoreStatus(Enum):
