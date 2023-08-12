@@ -79,7 +79,7 @@ def sync_logs(file: UploadFile):
                 timestamp_utc = datetime.strptime(
                     timestamp_utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(time_zone))
 
-            status_type = models.StoreStatus.ACTIVE if status == "ACTIVE" else models.StoreStatus.INACTIVE
+            status_type = models.StoreStatus.ACTIVE if status == "active" else models.StoreStatus.INACTIVE
             store_log = models.StoreLogs(
                 store_id=store_id, status=status_type, timestamp=timestamp_utc)
 
