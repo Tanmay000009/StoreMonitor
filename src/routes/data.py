@@ -97,12 +97,14 @@ def get_logs(skip: int = 0, limit: int = 20):
         for store_timezone in store_timezones:
             timezone_str = (
                 store_timezone.timestamp.strftime(
-                    "%Y-%m-%d %H:%M:%S.%f %z") + " UTC"
+                    "%Y-%m-%d %H:%M:%S.%f")
             )
-
-            timezone_list.append(
-                {"store_id": store_timezone.store_id, "timezone_str": timezone_str}
-            )
+            storeStatus = "ACTIVE" if store_timezone.status == models.StoreStatus.ACTIVE else "INACTIVE"
+            timezone_list.append({
+                "store_id": store_timezone.store_id,
+                "timezone_str": timezone_str,
+                "status": storeStatus
+            })
         return JSONResponse(
             status_code=200, content={"message": "success", "data": timezone_list}
         )
@@ -121,10 +123,11 @@ def get_logs_by_id(id):
     """Get logs by id."""
     try:
         db = database.SessionLocal()
-        store_timezones = (
-            db.query(models.StoreLogs).filter(
-                models.StoreLogs.store_id == id).first()
-        )
+        # get timezone for store id, on date 2023-01-22
+        store_timezones = db.query(models.StoreLogs).filter(
+            models.StoreLogs.store_id == id,
+            # models.StoreLogs.timestamp.like(f"%2023-01-22%"),
+        ).all()
 
         if not store_timezones:
             return JSONResponse(status_code=404, content={"message": "Not Found"})
@@ -134,9 +137,11 @@ def get_logs_by_id(id):
                 store_timezone.timestamp.strftime(
                     "%Y-%m-%d %H:%M:%S.%f %z") + " UTC"
             )
+            storeStatus = "ACTIVE" if store_timezone.status == models.StoreStatus.ACTIVE else "INACTIVE"
 
             timezone_list.append(
-                {"store_id": store_timezone.store_id, "timezone_str": timezone_str}
+                {"store_id": store_timezone.store_id,
+                    "timezone_str": timezone_str, "status": storeStatus}
             )
         return JSONResponse(
             status_code=200, content={"message": "success", "data": timezone_list}
