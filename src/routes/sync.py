@@ -1,5 +1,7 @@
 import csv
-from datetime import datetime, timezone, time
+from datetime import datetime, time
+from pytz import timezone
+
 from fastapi import APIRouter, UploadFile
 from fastapi.responses import JSONResponse
 from ..schemas import response
@@ -55,16 +57,27 @@ def sync_logs(file: UploadFile):
         # Skip the header row
         next(csv_reader)
 
+        # Fetch all store ids with their timezone
+        store_timezones = db.query(models.StoreTimezone).all()
+
         # Parse and insert CSV data into the database
         for row in csv_reader:
             store_id, status, timestamp_utc = row
+
+            # Convert UTC timestamp to store timezone timestamp
+            time_zone = "America/Chicago"
+            for store_timezone in store_timezones:
+                if store_timezone.store_id == store_id:
+                    time_zone = store_timezone.timezone_str
+                    break
             timestamp_utc = timestamp_utc.replace("UTC", "").strip()
+
             if timestamp_utc.find(".") != -1:
                 timestamp_utc = datetime.strptime(
-                    timestamp_utc, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
+                    timestamp_utc, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone(time_zone))
             else:
                 timestamp_utc = datetime.strptime(
-                    timestamp_utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                    timestamp_utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(time_zone))
 
             status_type = models.StoreStatus.ACTIVE if status == "ACTIVE" else models.StoreStatus.INACTIVE
             store_log = models.StoreLogs(
