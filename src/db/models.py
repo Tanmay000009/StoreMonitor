@@ -45,3 +45,10 @@ class StoreLogs(Base):
         default=StoreStatus.ACTIVE,
         nullable=False,
     )
+
+
+class Report(Base):
+
+    __tablename__ = "report"
+
+    id = Column(Integer, primary_key=True, index=True)
