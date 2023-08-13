@@ -10,8 +10,31 @@ from fastapi import BackgroundTasks
 
 router = APIRouter()
 
+@router.get("/get_report/{report_id}", responses=response.general_responses)
+def get_report(report_id):
+    try:
+        db = database.SessionLocal()
+        report = db.query(models.Report).filter_by(id=report_id).first()
+        if not report:
+            return JSONResponse(status_code=404,
+                                content={"message": "Report not found"})
+        # get report file
+        with open(f"report_{report_id}.txt", "w") as f:
+            report = f.read()
+        if report:
+            return JSONResponse(status_code=200,
+                                content={"message": "Report fetched successfully", "report": report})
+        else:
+            return JSONResponse(status_code=404,
+                                content={"message": "Running report generation"})
+    except Exception as e:
+        print("Error in get_report: ", e)
+        return JSONResponse(status_code=500,
+                            content={"message": "Internal Server Error"})
+    finally:
+        db.close()
 
-@router.get("/trigger_report", responses=response.general_responses)
+@router.post("/trigger_report", responses=response.general_responses)
 async def trigger_report(background_tasks: BackgroundTasks):
     try:
         db = database.SessionLocal()
@@ -43,8 +66,7 @@ def generateReport(timestamp: datetime.datetime, report_id: str):
         print("Generating report for timestamp: ", timestamp)
         db = database.SessionLocal()
         restaurants = db.query(models.StoreTimezone).all()
-        restaurants = restaurants[:2]
-        print("Restaurants: ", restaurants)
+    
         report = []
         for restaurant in restaurants:
             print("Generating report for restaurant: ", restaurant.store_id)
@@ -72,7 +94,7 @@ def generateReportForRestaurant(restaurant_id: str, timestamp: datetime.datetime
         downtime_last_day = 0
         downtime_last_week = 0
         # fetch data for last 7 days
-        for i in range(1, 2):
+        for i in range(1, 8):
             print("Generating report for day: ", i)
             # fetch logs for that day
             storeLogs = db.query(models.StoreLogs).filter(
