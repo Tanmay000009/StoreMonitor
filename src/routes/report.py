@@ -10,6 +10,7 @@ from fastapi import BackgroundTasks
 
 router = APIRouter()
 
+
 @router.get("/get_report/{report_id}", responses=response.general_responses)
 def get_report(report_id):
     try:
@@ -34,21 +35,27 @@ def get_report(report_id):
     finally:
         db.close()
 
+
 @router.post("/trigger_report", responses=response.general_responses)
-async def trigger_report(background_tasks: BackgroundTasks):
+async def trigger_report(background_tasks: BackgroundTasks, date=None):
     try:
         db = database.SessionLocal()
-        
+
         report_id = None
         report_id = str(random.randint(1000, 9999))
         while db.query(models.Report).filter_by(id=report_id).first():
             report_id = str(random.randint(1000, 9999))
-        report =   models.Report(id=report_id)
+        report = models.Report(id=report_id)
         db.add(report)
         db.commit()
-
-        background_tasks.add_task(
-            generateReport, datetime.datetime.now(), report_id)
+        if date:
+            date = datetime.datetime.strptime(date, "%d-%m-%Y")
+            print("Date: ", date)
+            background_tasks.add_task(
+                generateReport, date, report_id)
+        else:
+            background_tasks.add_task(
+                generateReport, datetime.datetime.now(), report_id)
 
         return JSONResponse(status_code=200,
                             content={"message": "Report triggered successfully", "report_id": report_id})
@@ -63,17 +70,14 @@ async def trigger_report(background_tasks: BackgroundTasks):
 
 def generateReport(timestamp: datetime.datetime, report_id: str):
     try:
-        print("Generating report for timestamp: ", timestamp)
         db = database.SessionLocal()
         restaurants = db.query(models.StoreTimezone).all()
-    
+
         report = []
         for restaurant in restaurants:
-            print("Generating report for restaurant: ", restaurant.store_id)
             re = generateReportForRestaurant(
                 restaurant.store_id, timestamp, report_id)
             report.append(re)
-        print("Report generated: ", report)
         # save report in root directory
         with open(f"report_{report_id}.txt", "w") as f:
             f.write(str(report))
@@ -95,20 +99,20 @@ def generateReportForRestaurant(restaurant_id: str, timestamp: datetime.datetime
         downtime_last_week = 0
         # fetch data for last 7 days
         for i in range(1, 8):
-            print("Generating report for day: ", i)
             # fetch logs for that day
             storeLogs = db.query(models.StoreLogs).filter(
-                    models.StoreLogs.timestamp >= timestamp -
-                    datetime.timedelta(days=i) , models.StoreLogs.timestamp <= timestamp,
-                    models.StoreLogs.store_id == restaurant_id
-                    ).all()
+                models.StoreLogs.timestamp + datetime.timedelta(days=i-1) >= timestamp -
+                datetime.timedelta(
+                    days=i), models.StoreLogs.timestamp <= timestamp,
+                models.StoreLogs.store_id == restaurant_id
+            ).all()
 
             businessHours = db.query(models.BusinessHours).filter_by(
                 store_id=restaurant_id, day_of_week=day).all()
             if i == 1:
                 # firstDay, consider only hours till timestamp
                 uptime_minutes, downtime_minutes, upTimelastHour, downTimelastHour = generateDayRecord(
-                    storeLogs, businessHours, None, timestamp)
+                    storeLogs, businessHours, None, timestamp, restaurant_id)
                 uptime_last_hour = upTimelastHour
                 downtime_last_hour = downTimelastHour
                 uptime_last_day = uptime_minutes
@@ -118,13 +122,13 @@ def generateReportForRestaurant(restaurant_id: str, timestamp: datetime.datetime
             elif i == 7:
                 # lastDay, consider only hours from timestamp
                 uptime_minutes, downtime_minutes, upTimelastHour, downTimelastHour = generateDayRecord(
-                    storeLogs, businessHours, timestamp, None)
+                    storeLogs, businessHours, timestamp, None, restaurant_id)
                 update_last_week += uptime_minutes
                 downtime_last_week += downtime_minutes
 
             else:
                 uptime_minutes, downtime_minutes, upTimelastHour, downTimelastHour = generateDayRecord(
-                    storeLogs, businessHours)
+                    storeLogs, businessHours, restaurant_id)
                 update_last_week += uptime_minutes
                 downtime_last_week += downtime_minutes
             if (day == 0):
@@ -133,18 +137,16 @@ def generateReportForRestaurant(restaurant_id: str, timestamp: datetime.datetime
                 day = day - 1
 
         return {
-            "id":report_id,
-            "store_id":restaurant_id,
-            "timestamp":timestamp,
-            "uptime_last_hour":uptime_last_hour,
-            "uptime_last_day":uptime_last_day,
-            "uptime_last_week":update_last_week,
-            "downtime_last_hour":downtime_last_hour,
-            "downtime_last_day":downtime_last_day,
-            "downtime_last_week":downtime_last_week
+            "id": report_id,
+            "store_id": restaurant_id,
+            "timestamp": timestamp,
+            "uptime_last_hour": uptime_last_hour,
+            "uptime_last_day": uptime_last_day,
+            "uptime_last_week": update_last_week,
+            "downtime_last_hour": downtime_last_hour,
+            "downtime_last_day": downtime_last_day,
+            "downtime_last_week": downtime_last_week
         }
-
-        
 
     except Exception as e:
         print("Error in generateReportForRestaurant: ", e)
@@ -156,66 +158,80 @@ def generateReportForRestaurant(restaurant_id: str, timestamp: datetime.datetime
 def generateDayRecord(logs: [models.StoreLogs],
                       hours: [models.BusinessHours],
                       fromTime: datetime.datetime | None = None,
-                      till: datetime.datetime | None = None):
+                      till: datetime.datetime | None = None,
+                      store_id: str = None):
     try:
-        print("Generating day record for logs: ")
         # generate array of 24 hours
         dayRecord = [0] * 24
         for log in logs:
             hour = log.timestamp.hour
-            dayRecord[hour] = 1
-
-        # sort hours by start time
-        hours.sort(key=lambda x: x.open_time)
-
+            print("Hour: ", hour)
+            if log.status == "active":
+                dayRecord[hour] = 1
         hours_stack = []
+        if len(hours) == 0:
 
-        # merge overlapping hours
-        for i in hours[1:]:
-            if hours_stack[-1][0] <= i[0] <= hours_stack[-1][-1]:
-                hours_stack[-1][-1] = max(hours_stack[-1][-1], i[-1])
-            else:
-                hours_stack.append(i)
+            open_time = datetime.time.fromisoformat("00:00:00")
+            close_time = datetime.time.fromisoformat("23:59:59")
+            obj = {"open_time": open_time,
+                   "close_time": close_time, "store_id": store_id, "day_of_week": 0}
+            hours_stack.append(obj)
+            print(obj)
+
+        else:
+            # sort hours by start time
+            hours.sort(key=lambda x: x.open_time)
+
+            if len(hours) > 0:
+                # merge overlapping hours
+                for i in hours[1:]:
+                    if hours_stack[-1][0] <= i[0] <= hours_stack[-1][-1]:
+                        hours_stack[-1][-1] = max(hours_stack[-1][-1], i[-1])
+                    else:
+                        hours_stack.append(i)
 
         filtered_hours = []
 
         # only consider hours till "till"
-        if till:
+        if fromTime:
             for hour in hours_stack:
-                if hour.open_time.hour >= till.hour:
-                    if hour.close_time.hour >= till.hour:
-                        hour.close_time = till
+                if hour.open_time.hour >= fromTime.hour:
+                    filtered_hours.append(hour)
+                elif hour.close_time.hour > fromTime.hour:
+                    hour.open_time = fromTime
                     filtered_hours.append(hour)
         else:
             filtered_hours = hours_stack
+
         upTimelastHour = 0
         downTimelastHour = 0
         # only consider hours from "fromTime" & consider last hour
-        if fromTime:
+        if till:
             for hour in filtered_hours:
-                if hour.close_time.hour <= fromTime.hour:
+                if hour.open_time.hour >= till.hour:
                     filtered_hours.remove(hour)
                 else:
-                    if hour.open_time.hour <= fromTime.hour:
-                        hour.open_time = fromTime
+                    if hour.close_time.hour > till.hour:
+                        hour.close_time = till
             # check if last hour is in filtered hours
             intervals = []
             mins = 60
+            # todo: fix last hour logic
             for hour in filtered_hours:
-                if hour.open_time.hour <= fromTime.hour:
-                    if hour.close_time.minutes >= fromTime.hour.minutes + mins:
+                if hour.open_time.hour <= till.hour:
+                    if hour.close_time.minutes >= till.hour.minutes + mins:
                         intervals.append({
-                            "start_time": fromTime,
-                            "end_time": fromTime + datetime.timedelta(minutes=mins)
+                            "start_time": till,
+                            "end_time": till + datetime.timedelta(minutes=mins)
                         })
                         break
                     else:
                         intervals.append({
-                            "start_time": fromTime,
+                            "start_time": till,
                             "end_time": hour.close_time
                         })
-                        fromTime = hour.close_time
-                        mins = 60 - fromTime.minutes
+                        till = hour.close_time
+                        mins = 60 - till.minutes
 
             for hour in intervals:
                 start_time_hour = hour.open_time.hour
